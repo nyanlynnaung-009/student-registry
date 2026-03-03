@@ -18,6 +18,7 @@ import {
   MapPin,
   Phone,
   FileText,
+  Edit,
   CheckCircle2,
   AlertCircle,
   LayoutDashboard,
@@ -280,10 +281,14 @@ export default function App() {
   const [selectedGrade, setSelectedGrade] = useState('All Grades');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [formStep, setFormStep] = useState(1);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<number | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   
   // Settings State
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
@@ -458,11 +463,28 @@ export default function App() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('students')
-        .insert([{ ...formData, user_id: session?.user.id }])
-        .select()
-        .single();
+      let data, error;
+      
+      if (isEditMode && editingId) {
+        // Update existing student
+        const result = await supabase
+          .from('students')
+          .update(formData)
+          .eq('id', editingId)
+          .select()
+          .single();
+        data = result.data;
+        error = result.error;
+      } else {
+        // Insert new student
+        const result = await supabase
+          .from('students')
+          .insert([{ ...formData, user_id: session?.user.id }])
+          .select()
+          .single();
+        data = result.data;
+        error = result.error;
+      }
       
       if (error) {
         if (error.code === '23505') throw new Error(t.enrollmentExists);
@@ -470,9 +492,18 @@ export default function App() {
       }
       
       if (data) {
-        setStudents([data, ...students]);
+        if (isEditMode) {
+          setStudents(students.map(s => s.id === editingId ? data : s));
+          showToast('Student updated successfully', 'success');
+        } else {
+          setStudents([data, ...students]);
+          showToast(t.saveSuccess, 'success');
+        }
+        
         setIsModalOpen(false);
         setFormStep(1);
+        setIsEditMode(false);
+        setEditingId(null);
         setFormData({
           name: '',
           birth_date: '',
@@ -485,7 +516,6 @@ export default function App() {
           guardian_name: '',
           notes: ''
         });
-        showToast(t.saveSuccess, 'success');
         fetchStats();
       }
     } catch (err: any) {
@@ -493,22 +523,68 @@ export default function App() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm(t.confirmDelete)) return;
-    
+  const handleEdit = (student: Student) => {
+    setFormData({
+      name: student.name || '',
+      birth_date: student.birth_date || '',
+      enrollment_no: student.enrollment_no || '',
+      grade: student.grade || '',
+      father_name: student.father_name || '',
+      mother_name: student.mother_name || '',
+      address: student.address || '',
+      phone_no: student.phone_no || '',
+      guardian_name: student.guardian_name || '',
+      notes: student.notes || ''
+    });
+    setEditingId(student.id);
+    setIsEditMode(true);
+    setFormStep(1);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (id: number) => {
+    setStudentToDelete(id);
+    setIsDeletingAll(false);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleClearAllRecords = () => {
+    setIsDeletingAll(true);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
     try {
-      const { error } = await supabase
-        .from('students')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      
-      setStudents(students.filter(s => s.id !== id));
-      showToast(t.deleteSuccess, 'success');
+      if (isDeletingAll) {
+        const { error } = await supabase
+          .from('students')
+          .delete()
+          .gt('id', 0); 
+
+        if (error) throw error;
+
+        setStudents([]);
+        setStats(null);
+        showToast('All records cleared successfully', 'success');
+      } else if (studentToDelete) {
+        const { error } = await supabase
+          .from('students')
+          .delete()
+          .eq('id', studentToDelete);
+        
+        if (error) throw error;
+        
+        setStudents(students.filter(s => s.id !== studentToDelete));
+        showToast(t.deleteSuccess, 'success');
+      }
       fetchStats();
-    } catch (err) {
-      showToast(t.errorDelete, 'error');
+    } catch (err: any) {
+      console.error('Error deleting:', err);
+      showToast(`Failed to delete: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setIsDeleteModalOpen(false);
+      setStudentToDelete(null);
+      setIsDeletingAll(false);
     }
   };
 
@@ -587,6 +663,10 @@ export default function App() {
   };
 
   const handleBackupDatabase = () => {
+    if (students.length === 0) {
+      showToast('No student records to backup', 'error');
+      return;
+    }
     const dataStr = JSON.stringify(students, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -597,28 +677,6 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     showToast('Database backup downloaded successfully', 'success');
-  };
-
-  const handleClearAllRecords = async () => {
-    if (!window.confirm('Are you sure you want to delete ALL student records? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('students')
-        .delete()
-        .neq('id', 0); // Delete all rows where id is not 0 (effectively all rows)
-
-      if (error) throw error;
-
-      setStudents([]);
-      setStats(null);
-      showToast('All records cleared successfully', 'success');
-    } catch (err) {
-      console.error('Error clearing records:', err);
-      showToast('Failed to clear records', 'error');
-    }
   };
 
   return (
@@ -919,6 +977,13 @@ export default function App() {
                                 <Eye className="w-4 h-4" />
                               </button>
                               <button 
+                                onClick={() => handleEdit(student)}
+                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 dark:hover:text-amber-400 rounded-lg transition-all"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button 
                                 onClick={() => handleDelete(student.id)}
                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 rounded-lg transition-all"
                                 title={t.delete}
@@ -1131,9 +1196,9 @@ export default function App() {
                     <div className="flex items-center justify-between mb-6">
                       <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                         <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                          <UserPlus className="w-5 h-5 text-indigo-600" />
+                          {isEditMode ? <Edit className="w-5 h-5 text-indigo-600" /> : <UserPlus className="w-5 h-5 text-indigo-600" />}
                         </div>
-                        {t.addStudent}
+                        {isEditMode ? 'Edit Student' : t.addStudent}
                       </h2>
                       <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
                         <X className="w-5 h-5 text-slate-500" />
@@ -1175,55 +1240,70 @@ export default function App() {
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: -20 }}
-                            className="space-y-6"
+                            className="space-y-5"
                           >
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.studentName} *</label>
-                              <input 
-                                required
-                                type="text" 
-                                className="input-field" 
-                                placeholder="e.g. John Doe"
-                                value={formData.name}
-                                onChange={e => setFormData({...formData, name: e.target.value})}
-                              />
-                            </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.enrollmentNo} *</label>
-                              <input 
-                                required
-                                type="text" 
-                                className="input-field" 
-                                placeholder="e.g. STU-2024-001"
-                                value={formData.enrollment_no}
-                                onChange={e => setFormData({...formData, enrollment_no: e.target.value})}
-                              />
-                            </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.grade}</label>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.studentName} <span className="text-rose-500">*</span></label>
                               <div className="relative">
-                                <select 
-                                  className="input-field appearance-none"
-                                  value={formData.grade}
-                                  onChange={e => setFormData({...formData, grade: e.target.value})}
-                                >
-                                  <option value="">{t.grade}</option>
-                                  <option value="KG">KG</option>
-                                  {[...Array(12)].map((_, i) => (
-                                    <option key={i} value={`Grade ${i + 1}`}>Grade {i + 1}</option>
-                                  ))}
-                                </select>
-                                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  required
+                                  type="text" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder="e.g. John Doe"
+                                  value={formData.name}
+                                  onChange={e => setFormData({...formData, name: e.target.value})}
+                                />
                               </div>
                             </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.birthDate}</label>
-                              <input 
-                                type="date" 
-                                className="input-field cursor-pointer"
-                                value={formData.birth_date}
-                                onChange={e => setFormData({...formData, birth_date: e.target.value})}
-                              />
+
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.enrollmentNo} <span className="text-rose-500">*</span></label>
+                              <div className="relative">
+                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  required
+                                  type="text" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder="e.g. STU-2024-001"
+                                  value={formData.enrollment_no}
+                                  onChange={e => setFormData({...formData, enrollment_no: e.target.value})}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.grade}</label>
+                                <div className="relative">
+                                  <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                  <select 
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white appearance-none"
+                                    value={formData.grade}
+                                    onChange={e => setFormData({...formData, grade: e.target.value})}
+                                  >
+                                    <option value="">Select</option>
+                                    <option value="KG">KG</option>
+                                    {[...Array(12)].map((_, i) => (
+                                      <option key={i} value={`Grade ${i + 1}`}>Grade {i + 1}</option>
+                                    ))}
+                                  </select>
+                                  <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.birthDate}</label>
+                                <div className="relative">
+                                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                  <input 
+                                    type="date" 
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white cursor-pointer"
+                                    value={formData.birth_date}
+                                    onChange={e => setFormData({...formData, birth_date: e.target.value})}
+                                  />
+                                </div>
+                              </div>
                             </div>
                           </motion.section>
                         )}
@@ -1234,27 +1314,33 @@ export default function App() {
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: -20 }}
-                            className="space-y-6"
+                            className="space-y-5"
                           >
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.fatherName}</label>
-                              <input 
-                                type="text" 
-                                className="input-field" 
-                                placeholder="Full Name"
-                                value={formData.father_name}
-                                onChange={e => setFormData({...formData, father_name: e.target.value})}
-                              />
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.fatherName}</label>
+                              <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  type="text" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder="Full Name"
+                                  value={formData.father_name}
+                                  onChange={e => setFormData({...formData, father_name: e.target.value})}
+                                />
+                              </div>
                             </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.motherName}</label>
-                              <input 
-                                type="text" 
-                                className="input-field" 
-                                placeholder="Full Name"
-                                value={formData.mother_name}
-                                onChange={e => setFormData({...formData, mother_name: e.target.value})}
-                              />
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.motherName}</label>
+                              <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  type="text" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder="Full Name"
+                                  value={formData.mother_name}
+                                  onChange={e => setFormData({...formData, mother_name: e.target.value})}
+                                />
+                              </div>
                             </div>
                           </motion.section>
                         )}
@@ -1265,45 +1351,57 @@ export default function App() {
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: -20 }}
-                            className="space-y-6"
+                            className="space-y-5"
                           >
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.phoneNo}</label>
-                              <input 
-                                type="tel" 
-                                className="input-field" 
-                                placeholder="Numbers only"
-                                value={formData.phone_no}
-                                onChange={e => setFormData({...formData, phone_no: e.target.value})}
-                              />
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.phoneNo}</label>
+                              <div className="relative">
+                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  type="tel" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder="Numbers only"
+                                  value={formData.phone_no}
+                                  onChange={e => setFormData({...formData, phone_no: e.target.value})}
+                                />
+                              </div>
                             </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.guardianName}</label>
-                              <input 
-                                type="text" 
-                                className="input-field" 
-                                placeholder="Full Name"
-                                value={formData.guardian_name}
-                                onChange={e => setFormData({...formData, guardian_name: e.target.value})}
-                              />
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.guardianName}</label>
+                              <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  type="text" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder="Full Name"
+                                  value={formData.guardian_name}
+                                  onChange={e => setFormData({...formData, guardian_name: e.target.value})}
+                                />
+                              </div>
                             </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.address}</label>
-                              <textarea 
-                                className="input-field min-h-[80px]" 
-                                placeholder="Full residential address"
-                                value={formData.address}
-                                onChange={e => setFormData({...formData, address: e.target.value})}
-                              />
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.address}</label>
+                              <div className="relative">
+                                <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                                <textarea 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 min-h-[80px]" 
+                                  placeholder="Full residential address"
+                                  value={formData.address}
+                                  onChange={e => setFormData({...formData, address: e.target.value})}
+                                />
+                              </div>
                             </div>
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                              <label className="label-text">{t.notes}</label>
-                              <textarea 
-                                className="input-field min-h-[80px]" 
-                                placeholder="Medical info, dietary needs, etc."
-                                value={formData.notes}
-                                onChange={e => setFormData({...formData, notes: e.target.value})}
-                              />
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.notes}</label>
+                              <div className="relative">
+                                <FileText className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                                <textarea 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 min-h-[80px]" 
+                                  placeholder="Medical info, dietary needs, etc."
+                                  value={formData.notes}
+                                  onChange={e => setFormData({...formData, notes: e.target.value})}
+                                />
+                              </div>
                             </div>
                           </motion.section>
                         )}
@@ -1526,6 +1624,55 @@ export default function App() {
                 >
                   {t.close}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDeleteModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 text-center">
+                <div className="w-12 h-12 bg-rose-100 dark:bg-rose-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-6 h-6 text-rose-600 dark:text-rose-400" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+                  {isDeletingAll ? 'Delete All Records?' : 'Delete Student?'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                  {isDeletingAll 
+                    ? 'This action cannot be undone. All student data will be permanently removed.' 
+                    : 'Are you sure you want to delete this student record? This action cannot be undone.'}
+                </p>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={confirmDelete}
+                    className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl font-semibold hover:bg-rose-700 transition-colors shadow-lg shadow-rose-200 dark:shadow-none"
+                  >
+                    {isDeletingAll ? 'Delete All' : 'Delete'}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
