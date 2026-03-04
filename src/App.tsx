@@ -107,7 +107,7 @@ const Auth = ({ onAuthSuccess, lang, setLang, darkMode, setDarkMode }: {
     } catch (err: any) {
       console.error('Auth error:', err);
       if (err.message === 'Failed to fetch') {
-        setError('Network error: Cannot reach Supabase. Please check your connection or VPN.');
+        setError(t.networkError);
       } else {
         setError(err.message);
       }
@@ -375,9 +375,9 @@ export default function App() {
     } catch (err: any) {
       console.error('Error fetching students:', err);
       if (err.message === 'Failed to fetch') {
-        showToast('Network error: Cannot reach Supabase. Check your connection or VPN.', 'error');
+        showToast(t.networkError, 'error');
       } else {
-        showToast(`Failed to load students: ${err.message || 'Unknown error'}`, 'error');
+        showToast(`${t.loadStudentsError}: ${err.message || 'Unknown error'}`, 'error');
       }
     } finally {
       setLoading(false);
@@ -408,9 +408,9 @@ export default function App() {
     } catch (err: any) {
       console.error('Failed to fetch stats:', err);
       if (err.message === 'Failed to fetch') {
-        showToast('Network error: Cannot reach Supabase stats.', 'error');
+        showToast(t.networkError, 'error');
       } else {
-        showToast(`Failed to load stats: ${err.message || 'Unknown error'}`, 'error');
+        showToast(`${t.loadStatsError}: ${err.message || 'Unknown error'}`, 'error');
       }
     }
   };
@@ -495,7 +495,7 @@ export default function App() {
       if (data) {
         if (isEditMode) {
           setStudents(students.map(s => s.id === editingId ? data : s));
-          showToast('Student updated successfully', 'success');
+          showToast(t.updateSuccess, 'success');
         } else {
           setStudents([data, ...students]);
           showToast(t.saveSuccess, 'success');
@@ -520,7 +520,7 @@ export default function App() {
         fetchStats();
       }
     } catch (err: any) {
-      showToast(err.message || 'Failed to save student', 'error');
+      showToast(err.message || t.saveError, 'error');
     }
   };
 
@@ -566,7 +566,7 @@ export default function App() {
 
         setStudents([]);
         setStats(null);
-        showToast('All records cleared successfully', 'success');
+        showToast(t.clearSuccess, 'success');
       } else if (studentToDelete) {
         const { error } = await supabase
           .from('students')
@@ -581,7 +581,7 @@ export default function App() {
       fetchStats();
     } catch (err: any) {
       console.error('Error deleting:', err);
-      showToast(`Failed to delete: ${err.message || 'Unknown error'}`, 'error');
+      showToast(`${t.errorDelete}: ${err.message || 'Unknown error'}`, 'error');
     } finally {
       setIsDeleteModalOpen(false);
       setStudentToDelete(null);
@@ -665,7 +665,7 @@ export default function App() {
 
   const handleBackupDatabase = () => {
     if (students.length === 0) {
-      showToast('No student records to backup', 'error');
+      showToast(t.noRecordsBackup, 'error');
       return;
     }
     const dataStr = JSON.stringify(students, null, 2);
@@ -677,7 +677,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Database backup downloaded successfully', 'success');
+    showToast(t.backupSuccess, 'success');
   };
 
   return (
@@ -755,7 +755,7 @@ export default function App() {
             <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-2">{session?.user.email}</p>
             {isAdmin && (
               <span className="inline-block px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-md border border-amber-200 dark:border-amber-800">
-                ADMIN ACCESS
+                {t.adminAccess}
               </span>
             )}
           </div>
@@ -1006,7 +1006,7 @@ export default function App() {
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
               <header>
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t.dashboard}</h1>
-                <p className="text-slate-500 dark:text-slate-400 mt-1">System-wide analytics and student distribution</p>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">{t.systemAnalytics}</p>
               </header>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1199,7 +1199,7 @@ export default function App() {
                         <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
                           {isEditMode ? <Edit className="w-5 h-5 text-indigo-600" /> : <UserPlus className="w-5 h-5 text-indigo-600" />}
                         </div>
-                        {isEditMode ? 'Edit Student' : t.addStudent}
+                        {isEditMode ? t.editStudent : t.addStudent}
                       </h2>
                       <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
                         <X className="w-5 h-5 text-slate-500" />
@@ -1251,7 +1251,7 @@ export default function App() {
                                   required
                                   type="text" 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
-                                  placeholder="e.g. John Doe"
+                                  placeholder={t.namePlaceholder}
                                   value={formData.name}
                                   onChange={e => setFormData({...formData, name: e.target.value})}
                                 />
@@ -1266,7 +1266,7 @@ export default function App() {
                                   required
                                   type="text" 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
-                                  placeholder="e.g. STU-2024-001"
+                                  placeholder={t.enrollmentPlaceholder}
                                   value={formData.enrollment_no}
                                   onChange={e => setFormData({...formData, enrollment_no: e.target.value})}
                                 />
@@ -1283,10 +1283,10 @@ export default function App() {
                                     value={formData.grade}
                                     onChange={e => setFormData({...formData, grade: e.target.value})}
                                   >
-                                    <option value="">Select</option>
+                                    <option value="">{t.select}</option>
                                     <option value="KG">KG</option>
                                     {[...Array(12)].map((_, i) => (
-                                      <option key={i} value={`Grade ${i + 1}`}>Grade {i + 1}</option>
+                                      <option key={i} value={`Grade ${i + 1}`}>{t.gradeLabel} {i + 1}</option>
                                     ))}
                                   </select>
                                   <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
@@ -1324,7 +1324,7 @@ export default function App() {
                                 <input 
                                   type="text" 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
-                                  placeholder="Full Name"
+                                  placeholder={t.fullNamePlaceholder}
                                   value={formData.father_name}
                                   onChange={e => setFormData({...formData, father_name: e.target.value})}
                                 />
@@ -1337,7 +1337,7 @@ export default function App() {
                                 <input 
                                   type="text" 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
-                                  placeholder="Full Name"
+                                  placeholder={t.fullNamePlaceholder}
                                   value={formData.mother_name}
                                   onChange={e => setFormData({...formData, mother_name: e.target.value})}
                                 />
@@ -1361,7 +1361,7 @@ export default function App() {
                                 <input 
                                   type="tel" 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
-                                  placeholder="Numbers only"
+                                  placeholder={t.numbersOnlyPlaceholder}
                                   value={formData.phone_no}
                                   onChange={e => setFormData({...formData, phone_no: e.target.value})}
                                 />
@@ -1374,7 +1374,7 @@ export default function App() {
                                 <input 
                                   type="text" 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
-                                  placeholder="Full Name"
+                                  placeholder={t.fullNamePlaceholder}
                                   value={formData.guardian_name}
                                   onChange={e => setFormData({...formData, guardian_name: e.target.value})}
                                 />
@@ -1386,7 +1386,7 @@ export default function App() {
                                 <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                                 <textarea 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 min-h-[80px]" 
-                                  placeholder="Full residential address"
+                                  placeholder={t.addressPlaceholder}
                                   value={formData.address}
                                   onChange={e => setFormData({...formData, address: e.target.value})}
                                 />
@@ -1398,7 +1398,7 @@ export default function App() {
                                 <FileText className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                                 <textarea 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 min-h-[80px]" 
-                                  placeholder="Medical info, dietary needs, etc."
+                                  placeholder={t.notesPlaceholder}
                                   value={formData.notes}
                                   onChange={e => setFormData({...formData, notes: e.target.value})}
                                 />
@@ -1461,7 +1461,7 @@ export default function App() {
                             <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3">
                               <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
                               <p className="text-[11px] text-amber-700 leading-relaxed">
-                                Please ensure all information is correct before completing the registration. This record will be added to the permanent registry.
+                                {t.reviewMessage}
                               </p>
                             </div>
                           </motion.section>
@@ -1653,25 +1653,25 @@ export default function App() {
                   <AlertCircle className="w-6 h-6 text-rose-600 dark:text-rose-400" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-                  {isDeletingAll ? 'Delete All Records?' : 'Delete Student?'}
+                  {isDeletingAll ? t.deleteAllTitle : t.deleteStudentTitle}
                 </h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
                   {isDeletingAll 
-                    ? 'This action cannot be undone. All student data will be permanently removed.' 
-                    : 'Are you sure you want to delete this student record? This action cannot be undone.'}
+                    ? t.deleteAllConfirm 
+                    : t.deleteStudentConfirm}
                 </p>
                 <div className="flex gap-3">
                   <button 
                     onClick={() => setIsDeleteModalOpen(false)}
                     className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                   >
-                    Cancel
+                    {t.cancel}
                   </button>
                   <button 
                     onClick={confirmDelete}
                     className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl font-semibold hover:bg-rose-700 transition-colors shadow-lg shadow-rose-200 dark:shadow-none"
                   >
-                    {isDeletingAll ? 'Delete All' : 'Delete'}
+                    {isDeletingAll ? t.deleteAll : t.delete}
                   </button>
                 </div>
               </div>
