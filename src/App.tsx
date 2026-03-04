@@ -865,7 +865,11 @@ export default function App() {
                       <option className="dark:bg-slate-800">{t.allGrades}</option>
                       <option value="KG" className="dark:bg-slate-800">KG</option>
                       {[...Array(12)].map((_, i) => (
-                        <option key={i} value={`Grade ${i + 1}`} className="dark:bg-slate-800">Grade {i + 1}</option>
+                        <option key={i} value={`Grade ${i + 1}`} className="dark:bg-slate-800">
+                          {lang === 'mm' 
+                            ? `${['၁', '၂', '၃', '၄', '၅', '၆', '၇', '၈', '၉', '၁၀', '၁၁', '၁၂'][i]} တန်း`
+                            : `Grade ${i + 1}`}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1286,7 +1290,11 @@ export default function App() {
                                     <option value="">{t.select}</option>
                                     <option value="KG">KG</option>
                                     {[...Array(12)].map((_, i) => (
-                                      <option key={i} value={`Grade ${i + 1}`}>{t.gradeLabel} {i + 1}</option>
+                                      <option key={i} value={`Grade ${i + 1}`}>
+                                        {lang === 'mm' 
+                                          ? `${['၁', '၂', '၃', '၄', '၅', '၆', '၇', '၈', '၉', '၁၀', '၁၁', '၁၂'][i]} တန်း`
+                                          : `Grade ${i + 1}`}
+                                      </option>
                                     ))}
                                   </select>
                                   <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
