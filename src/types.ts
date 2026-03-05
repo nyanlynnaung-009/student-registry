@@ -9,6 +9,8 @@ export interface Student {
   address: string;
   phone_no: string;
   guardian_name: string;
+  guardian_address?: string;
+  guardian_phone?: string;
   notes: string;
   created_at: string;
   user_id?: string;

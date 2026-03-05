@@ -108,6 +108,9 @@ const Auth = ({ onAuthSuccess, lang, setLang, darkMode, setDarkMode }: {
       console.error('Auth error:', err);
       if (err.message === 'Failed to fetch') {
         setError(t.networkError);
+      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT'))) {
+        setError('Session expired. Please try again.');
+        await supabase.auth.signOut();
       } else {
         setError(err.message);
       }
@@ -318,6 +321,8 @@ export default function App() {
     address: '',
     phone_no: '',
     guardian_name: '',
+    guardian_address: '',
+    guardian_phone: '',
     notes: ''
   });
 
@@ -326,7 +331,14 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Session error:', error);
+        setSession(null);
+        setLoading(false);
+        return;
+      }
+      
       setSession(session);
       if (session) {
         // We need to pass the session explicitly because state update might be slow
@@ -376,6 +388,10 @@ export default function App() {
       console.error('Error fetching students:', err);
       if (err.message === 'Failed to fetch') {
         showToast(t.networkError, 'error');
+      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT'))) {
+        // Handle invalid token by logging out
+        await supabase.auth.signOut();
+        setSession(null);
       } else {
         showToast(`${t.loadStudentsError}: ${err.message || 'Unknown error'}`, 'error');
       }
@@ -409,6 +425,10 @@ export default function App() {
       console.error('Failed to fetch stats:', err);
       if (err.message === 'Failed to fetch') {
         showToast(t.networkError, 'error');
+      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT'))) {
+        // Handle invalid token by logging out
+        await supabase.auth.signOut();
+        setSession(null);
       } else {
         showToast(`${t.loadStatsError}: ${err.message || 'Unknown error'}`, 'error');
       }
@@ -515,6 +535,8 @@ export default function App() {
           address: '',
           phone_no: '',
           guardian_name: '',
+          guardian_address: '',
+          guardian_phone: '',
           notes: ''
         });
         fetchStats();
@@ -535,6 +557,8 @@ export default function App() {
       address: student.address || '',
       phone_no: student.phone_no || '',
       guardian_name: student.guardian_name || '',
+      guardian_address: student.guardian_address || '',
+      guardian_phone: student.guardian_phone || '',
       notes: student.notes || ''
     });
     setEditingId(student.id);
@@ -631,18 +655,20 @@ export default function App() {
   const exportToCSV = () => {
     const headers = [
       t.studentName, 
-      t.birthDate, 
       t.enrollmentNo, 
       t.grade, 
+      t.birthDate, 
       t.fatherName, 
       t.motherName, 
-      t.address, 
       t.phoneNo, 
+      t.address, 
       t.guardianName, 
+      t.guardianPhone,
+      t.guardianAddress,
       t.notes
     ];
     const rows = students.map(s => [
-      s.name, s.birth_date, s.enrollment_no, s.grade, s.father_name, s.mother_name, s.address, s.phone_no, s.guardian_name, s.notes
+      s.name, s.enrollment_no, s.grade, s.birth_date, s.father_name, s.mother_name, s.phone_no, s.address, s.guardian_name, s.guardian_phone, s.guardian_address, s.notes
     ]);
     
     const csvContent = [
@@ -1150,6 +1176,17 @@ export default function App() {
                   <h3 className="font-bold text-slate-900 dark:text-white mb-4">{t.databaseManagement}</h3>
                   <div className="space-y-4">
                     <button 
+                      onClick={exportToCSV}
+                      className="w-full text-left px-4 py-3 bg-emerald-50 dark:bg-emerald-900/10 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded-xl transition-colors flex items-center justify-between group"
+                    >
+                      <div>
+                        <p className="font-medium text-emerald-700 dark:text-emerald-400">{t.exportCSV}</p>
+                        <p className="text-sm text-emerald-600/70 dark:text-emerald-400/70">Export all records to CSV (Excel compatible with Burmese support)</p>
+                      </div>
+                      <Download className="w-4 h-4 text-emerald-500 group-hover:text-emerald-600 group-hover:translate-y-1 transition-all" />
+                    </button>
+
+                    <button 
                       onClick={handleBackupDatabase}
                       className="w-full text-left px-4 py-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center justify-between group"
                     >
@@ -1351,17 +1388,6 @@ export default function App() {
                                 />
                               </div>
                             </div>
-                          </motion.section>
-                        )}
-
-                        {formStep === 3 && (
-                          <motion.section 
-                            key="step3"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            className="space-y-5"
-                          >
                             <div className="space-y-2">
                               <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.phoneNo}</label>
                               <div className="relative">
@@ -1376,6 +1402,29 @@ export default function App() {
                               </div>
                             </div>
                             <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.address}</label>
+                              <div className="relative">
+                                <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                                <textarea 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 min-h-[80px]" 
+                                  placeholder={t.addressPlaceholder}
+                                  value={formData.address}
+                                  onChange={e => setFormData({...formData, address: e.target.value})}
+                                />
+                              </div>
+                            </div>
+                          </motion.section>
+                        )}
+
+                        {formStep === 3 && (
+                          <motion.section 
+                            key="step3"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="space-y-5"
+                          >
+                            <div className="space-y-2">
                               <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.guardianName}</label>
                               <div className="relative">
                                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1389,14 +1438,27 @@ export default function App() {
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.address}</label>
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.guardianPhone}</label>
+                              <div className="relative">
+                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input 
+                                  type="tel" 
+                                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400" 
+                                  placeholder={t.numbersOnlyPlaceholder}
+                                  value={formData.guardian_phone || ''}
+                                  onChange={e => setFormData({...formData, guardian_phone: e.target.value})}
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.guardianAddress}</label>
                               <div className="relative">
                                 <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                                 <textarea 
                                   className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 min-h-[80px]" 
                                   placeholder={t.addressPlaceholder}
-                                  value={formData.address}
-                                  onChange={e => setFormData({...formData, address: e.target.value})}
+                                  value={formData.guardian_address || ''}
+                                  onChange={e => setFormData({...formData, guardian_address: e.target.value})}
                                 />
                               </div>
                             </div>
@@ -1455,14 +1517,26 @@ export default function App() {
                                     <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.phoneNo}</span>
                                     <p className="text-sm font-bold text-slate-900">{formData.phone_no || t.na}</p>
                                   </div>
+                                  <div className="col-span-2">
+                                    <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.address}</span>
+                                    <p className="text-sm font-bold text-slate-900 truncate">{formData.address || t.na}</p>
+                                  </div>
                                   <div>
                                     <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.guardianName}</span>
                                     <p className="text-sm font-bold text-slate-900 truncate">{formData.guardian_name || t.na}</p>
                                   </div>
+                                  <div>
+                                    <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.guardianPhone}</span>
+                                    <p className="text-sm font-bold text-slate-900 truncate">{formData.guardian_phone || t.na}</p>
+                                  </div>
                                 </div>
                                 <div className="pt-2 border-t border-indigo-100">
-                                  <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.address}</span>
-                                  <p className="text-xs text-slate-700 line-clamp-2">{formData.address || t.na}</p>
+                                  <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.guardianAddress}</span>
+                                  <p className="text-xs text-slate-700 line-clamp-2">{formData.guardian_address || t.na}</p>
+                                </div>
+                                <div className="pt-2 border-t border-indigo-100">
+                                  <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.notes}</span>
+                                  <p className="text-xs text-slate-700 line-clamp-2">{formData.notes || t.na}</p>
                                 </div>
                               </div>
                             </div>
@@ -1587,7 +1661,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.familyDetails}</p>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.parentsInfo}</p>
                   <div className="bg-slate-50 p-4 rounded-2xl space-y-3 border border-slate-100">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-slate-500 flex items-center gap-2">
@@ -1603,18 +1677,36 @@ export default function App() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-slate-500 flex items-center gap-2">
-                        <User className="w-4 h-4" /> {t.guardianName}
+                        <Phone className="w-4 h-4" /> {t.phoneNo}
                       </span>
-                      <span className="text-sm font-bold text-slate-900">{selectedStudent.guardian_name || '-'}</span>
+                      <span className="text-sm font-bold text-slate-900">{selectedStudent.phone_no || '-'}</span>
+                    </div>
+                    <div className="pt-2 border-t border-slate-200">
+                      <span className="text-xs text-slate-500 block mb-1">{t.address}</span>
+                      <p className="text-sm font-bold text-slate-900">{selectedStudent.address || t.na}</p>
                     </div>
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t.address}</p>
-                  <div className="flex gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <MapPin className="w-5 h-5 text-indigo-500 shrink-0" />
-                    <p className="text-slate-700 text-sm leading-relaxed font-medium">{selectedStudent.address || t.na}</p>
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.guardianName}</p>
+                  <div className="bg-slate-50 p-4 rounded-2xl space-y-3 border border-slate-100">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-500 flex items-center gap-2">
+                        <User className="w-4 h-4" /> {t.guardianName}
+                      </span>
+                      <span className="text-sm font-bold text-slate-900">{selectedStudent.guardian_name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-500 flex items-center gap-2">
+                        <Phone className="w-4 h-4" /> {t.guardianPhone}
+                      </span>
+                      <span className="text-sm font-bold text-slate-900">{selectedStudent.guardian_phone || '-'}</span>
+                    </div>
+                    <div className="pt-2 border-t border-slate-200">
+                      <span className="text-xs text-slate-500 block mb-1">{t.guardianAddress}</span>
+                      <p className="text-sm font-bold text-slate-900">{selectedStudent.guardian_address || t.na}</p>
+                    </div>
                   </div>
                 </div>
 

@@ -38,8 +38,9 @@ export const translations = {
     motherName: 'Mother Name',
     contactInfo: 'Contact Info',
     phoneNo: 'Phone No',
-    address: 'Address',
+    address: "Parents' Address",
     guardianName: 'Guardian Name',
+    guardianAddress: 'Guardian Address',
     notes: 'Notes',
     review: 'Review',
     saveStudent: 'Save Student',
@@ -124,7 +125,9 @@ export const translations = {
     adminAccess: 'ADMIN ACCESS',
     namePlaceholder: 'e.g. John Doe',
     enrollmentPlaceholder: 'e.g. STU-2024-001',
-    select: 'Select'
+    select: 'Select',
+    guardianAddress: 'Guardian Address',
+    guardianPhone: 'Guardian Phone'
   },
   mm: {
     appName: 'ကျောင်းသားမှတ်တမ်း',
@@ -162,8 +165,9 @@ export const translations = {
     motherName: 'မိခင်အမည်',
     contactInfo: 'ဆက်သွယ်ရန်',
     phoneNo: 'ဖုန်းနံပါတ်',
-    address: 'လိပ်စာ',
+    address: 'မိဘ လိပ်စာ',
     guardianName: 'အုပ်ထိန်းသူအမည်',
+    guardianAddress: 'အုပ်ထိန်းသူ၏ လိပ်စာ',
     notes: 'မှတ်စု',
     review: 'ပြန်လည်စစ်ဆေးရန်',
     saveStudent: 'ကျောင်းသားအချက်အလက်သိမ်းဆည်းမည်',
@@ -248,6 +252,8 @@ export const translations = {
     adminAccess: 'အက်ဒမင် ဝင်ရောက်ခွင့်',
     namePlaceholder: 'ဥပမာ - မောင်မောင်',
     enrollmentPlaceholder: 'ဥပမာ - STU-2024-001',
-    select: 'ရွေးချယ်ပါ'
+    select: 'ရွေးချယ်ပါ',
+    guardianAddress: 'အုပ်ထိန်းသူ၏ လိပ်စာ',
+    guardianPhone: 'အုပ်ထိန်းသူ၏ ဖုန်းနံပါတ်'
   }
 };
