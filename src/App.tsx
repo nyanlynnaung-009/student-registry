@@ -97,7 +97,13 @@ const Auth = ({ onAuthSuccess, lang, setLang, darkMode, setDarkMode }: {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            emailRedirectTo: window.location.origin
+          }
+        });
         if (error) throw error;
         if (!data.session) {
           alert(t.checkEmail);
