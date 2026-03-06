@@ -323,6 +323,7 @@ export default function App() {
     birth_date: '',
     enrollment_no: '',
     grade: '',
+    gender: '',
     father_name: '',
     mother_name: '',
     address: '',
@@ -405,8 +406,8 @@ export default function App() {
       console.error('Error fetching students:', err);
       if (err.message === 'Failed to fetch') {
         showToast(t.networkError, 'error');
-      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT'))) {
-        // Handle invalid token by logging out
+      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
+        // Handle invalid token or deleted user by logging out
         await supabase.auth.signOut();
         setSession(null);
       } else {
@@ -442,8 +443,8 @@ export default function App() {
       console.error('Failed to fetch stats:', err);
       if (err.message === 'Failed to fetch') {
         showToast(t.networkError, 'error');
-      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT'))) {
-        // Handle invalid token by logging out
+      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
+        // Handle invalid token or deleted user by logging out
         await supabase.auth.signOut();
         setSession(null);
       } else {
@@ -547,6 +548,7 @@ export default function App() {
           birth_date: '',
           enrollment_no: '',
           grade: '',
+          gender: '',
           father_name: '',
           mother_name: '',
           address: '',
@@ -559,7 +561,12 @@ export default function App() {
         fetchStats();
       }
     } catch (err: any) {
-      showToast(err.message || t.saveError, 'error');
+      if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
+        await supabase.auth.signOut();
+        setSession(null);
+      } else {
+        showToast(err.message || t.saveError, 'error');
+      }
     }
   };
 
@@ -569,6 +576,7 @@ export default function App() {
       birth_date: student.birth_date || '',
       enrollment_no: student.enrollment_no || '',
       grade: student.grade || '',
+      gender: student.gender || '',
       father_name: student.father_name || '',
       mother_name: student.mother_name || '',
       address: student.address || '',
@@ -622,7 +630,12 @@ export default function App() {
       fetchStats();
     } catch (err: any) {
       console.error('Error deleting:', err);
-      showToast(`${t.errorDelete}: ${err.message || 'Unknown error'}`, 'error');
+      if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
+        await supabase.auth.signOut();
+        setSession(null);
+      } else {
+        showToast(`${t.errorDelete}: ${err.message || 'Unknown error'}`, 'error');
+      }
     } finally {
       setIsDeleteModalOpen(false);
       setStudentToDelete(null);
@@ -674,6 +687,7 @@ export default function App() {
       t.studentName, 
       t.enrollmentNo, 
       t.grade, 
+      t.gender,
       t.birthDate, 
       t.fatherName, 
       t.motherName, 
@@ -685,7 +699,7 @@ export default function App() {
       t.notes
     ];
     const rows = students.map(s => [
-      s.name, s.enrollment_no, s.grade, s.birth_date, s.father_name, s.mother_name, s.phone_no, s.address, s.guardian_name, s.guardian_phone, s.guardian_address, s.notes
+      s.name, s.enrollment_no, s.grade, s.gender, s.birth_date, s.father_name, s.mother_name, s.phone_no, s.address, s.guardian_name, s.guardian_phone, s.guardian_address, s.notes
     ]);
     
     const csvContent = [
@@ -1035,6 +1049,7 @@ export default function App() {
                       <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300">{t.studentName}</th>
                       <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300">{t.enrollmentNo}</th>
                       <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300">{t.grade}</th>
+                      <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300">{t.gender}</th>
                       <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300 hidden md:table-cell">{t.birthDate}</th>
                       <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300 hidden lg:table-cell">{t.parents}</th>
                       <th className="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-300">{t.phoneNo}</th>
@@ -1081,6 +1096,7 @@ export default function App() {
                               {student.grade || t.na}
                             </span>
                           </td>
+                          <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{student.gender || '-'}</td>
                           <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 hidden md:table-cell">{student.birth_date}</td>
                           <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 hidden lg:table-cell">
                             <div className="text-xs opacity-70">F: {student.father_name || '-'}</div>
@@ -1432,6 +1448,25 @@ export default function App() {
                               </div>
 
                               <div className="space-y-2">
+                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.gender}</label>
+                                <div className="relative">
+                                  <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                  <select 
+                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm text-slate-900 dark:text-white appearance-none"
+                                    value={formData.gender}
+                                    onChange={e => setFormData({...formData, gender: e.target.value})}
+                                  >
+                                    <option value="">{t.select}</option>
+                                    <option value="Male">{t.male}</option>
+                                    <option value="Female">{t.female}</option>
+                                    <option value="Other">{t.other}</option>
+                                  </select>
+                                  <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
                                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.birthDate}</label>
                                 <div className="relative">
                                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1443,8 +1478,7 @@ export default function App() {
                                   />
                                 </div>
                               </div>
-                            </div>
-                          </motion.section>
+                            </motion.section>
                         )}
 
                         {formStep === 2 && (
@@ -1595,6 +1629,10 @@ export default function App() {
                                     <p className="text-sm font-bold text-slate-900">{formData.grade || t.na}</p>
                                   </div>
                                   <div>
+                                    <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.gender}</span>
+                                    <p className="text-sm font-bold text-slate-900">{formData.gender || t.na}</p>
+                                  </div>
+                                  <div>
                                     <span className="text-[10px] text-indigo-600 font-bold uppercase">{t.birthDate}</span>
                                     <p className="text-sm font-bold text-slate-900">{formData.birth_date || t.na}</p>
                                   </div>
@@ -1742,6 +1780,10 @@ export default function App() {
                   <div className="bg-slate-50 p-3 rounded-xl">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.grade}</p>
                     <p className="text-indigo-600 font-bold text-lg">{selectedStudent.grade || t.na}</p>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-xl">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.gender}</p>
+                    <p className="text-slate-900 font-bold">{selectedStudent.gender || '-'}</p>
                   </div>
                   <div className="bg-slate-50 p-3 rounded-xl">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.birthDate}</p>
