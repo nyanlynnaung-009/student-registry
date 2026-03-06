@@ -698,7 +698,7 @@ export default function App() {
       t.guardianAddress,
       t.notes
     ];
-    const rows = students.map(s => [
+    const rows = filteredStudents.map(s => [
       s.name, s.enrollment_no, s.grade, s.gender, s.birth_date, s.father_name, s.mother_name, s.phone_no, s.address, s.guardian_name, s.guardian_phone, s.guardian_address, s.notes
     ]);
     
@@ -713,7 +713,7 @@ export default function App() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `student_registry_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `student_registry_${selectedGrade !== 'All Grades' ? selectedGrade.replace(/\s+/g, '_') + '_' : ''}${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
