@@ -997,7 +997,7 @@ export default function App() {
                         <div className="flex justify-between items-start">
                           <div>
                             <h3 className="font-bold text-slate-900 dark:text-white">{student.name}</h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{student.enrollment_no}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{t.enrollmentNo} - {student.enrollment_no}</p>
                           </div>
                           <span className="px-2 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold rounded-md border border-indigo-100 dark:border-indigo-800">
                             {student.grade || t.na}
@@ -1764,8 +1764,7 @@ export default function App() {
                     <div>
                       <h2 className="text-2xl font-bold">{selectedStudent.name}</h2>
                       <p className="opacity-80 flex items-center gap-2 mt-1">
-                        <Hash className="w-4 h-4" />
-                        {selectedStudent.enrollment_no}
+                        {t.enrollmentNo} - {selectedStudent.enrollment_no}
                       </p>
                     </div>
                   </div>
