@@ -286,9 +286,9 @@ export default function App() {
   const t = translations[lang];
   const [view, setView] = useState<'home' | 'dashboard' | 'settings'>('home');
   const [students, setStudents] = useState<Student[]>([]);
-  const [stats, setStats] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGrade, setSelectedGrade] = useState('All Grades');
+  const [selectedGender, setSelectedGender] = useState('All Genders');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -301,6 +301,22 @@ export default function App() {
   const [studentToDelete, setStudentToDelete] = useState<number | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   
+  // Pagination State
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const PAGE_SIZE = 10;
+  
+  // Stats State
+  const [stats, setStats] = useState<{
+    totalStudents: number;
+    gradeDistribution: { grade: string, count: number }[];
+    recentAdmissions: { date: string, count: number }[];
+  }>({
+    totalStudents: 0,
+    gradeDistribution: [],
+    recentAdmissions: []
+  });
+
   // Settings State
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
   const [emailNotifications, setEmailNotifications] = useState(() => localStorage.getItem('emailNotifications') === 'true');
@@ -334,6 +350,20 @@ export default function App() {
     notes: ''
   });
 
+  // Removed client-side stats calculation useMemo
+  // Removed client-side filtering useMemo
+  // Removed recentAdmissions useMemo
+
+  const recentAdmissionsCount = useMemo(() => {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      // We use the stats data for this now
+      return stats.recentAdmissions.reduce((acc, curr) => {
+        if (new Date(curr.date) > sevenDaysAgo) return acc + curr.count;
+        return acc;
+      }, 0);
+  }, [stats]);
+
   const isAdmin = useMemo(() => {
     return session?.user?.email?.toLowerCase() === 'admin@example.com';
   }, [session]);
@@ -363,7 +393,6 @@ export default function App() {
       if (event === 'SIGNED_OUT') {
         setSession(null);
         setStudents([]);
-        setStats(null);
         setLoading(false);
         return;
       }
@@ -374,7 +403,6 @@ export default function App() {
         fetchStats();
       } else {
         setStudents([]);
-        setStats(null);
         setLoading(false);
       }
     });
@@ -393,15 +421,81 @@ export default function App() {
     };
   }, []);
 
-  const fetchStudents = async () => {
+  const fetchStats = React.useCallback(async () => {
     try {
+      // Fetch only necessary columns for stats to improve performance
       const { data, error } = await supabase
         .from('students')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('grade, created_at');
+
+      if (error) throw error;
+
+      if (data) {
+        const totalStudents = data.length;
+        const gradeCounts: Record<string, number> = {};
+        const recentAdmissionsMap: Record<string, number> = {};
+
+        data.forEach(s => {
+          if (s.grade) gradeCounts[s.grade] = (gradeCounts[s.grade] || 0) + 1;
+          const date = s.created_at?.split('T')[0];
+          if (date) recentAdmissionsMap[date] = (recentAdmissionsMap[date] || 0) + 1;
+        });
+
+        setStats({
+          totalStudents,
+          gradeDistribution: Object.entries(gradeCounts).map(([grade, count]) => ({ grade, count })),
+          recentAdmissions: Object.entries(recentAdmissionsMap).map(([date, count]) => ({ date, count }))
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+    }
+  }, []);
+
+  const fetchStudents = React.useCallback(async () => {
+    // Don't set loading to true for background refreshes if we already have data
+    // But for initial load or filter change, we might want it.
+    // Let's keep it simple for now.
+    if (students.length === 0) setLoading(true);
+    
+    try {
+      let query = supabase
+        .from('students')
+        .select('*', { count: 'exact' });
+
+      // Apply Filters
+      if (searchTerm) {
+        query = query.or(`name.ilike.%${searchTerm}%,enrollment_no.ilike.%${searchTerm}%`);
+      }
+      
+      if (selectedGrade !== 'All Grades') {
+        query = query.eq('grade', selectedGrade);
+      }
+
+      if (selectedGender !== 'All Genders') {
+        query = query.eq('gender', selectedGender);
+      }
+
+      // Apply Sorting
+      if (sortBy === 'name') {
+        query = query.order('name', { ascending: true });
+      } else if (sortBy === 'oldest') {
+        query = query.order('created_at', { ascending: true });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      // Apply Pagination
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
       
       if (error) throw error;
+      
       setStudents(data || []);
+      setTotalCount(count || 0);
     } catch (err: any) {
       console.error('Error fetching students:', err);
       if (err.message === 'Failed to fetch') {
@@ -416,42 +510,57 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, searchTerm, selectedGrade, selectedGender, sortBy, t, PAGE_SIZE]);
 
-  const fetchStats = async () => {
-    try {
-      // In a real app, you might use Supabase RPC or multiple queries
-      const { data: studentsData, error } = await supabase.from('students').select('*');
-      if (error) throw error;
+  // Realtime Subscription for Multi-User Support
+  useEffect(() => {
+    if (!session) return;
 
-      const totalStudents = studentsData.length;
-      const gradeCounts: Record<string, number> = {};
-      const recentAdmissions: Record<string, number> = {};
+    let timeoutId: NodeJS.Timeout;
 
-      studentsData.forEach(s => {
-        if (s.grade) gradeCounts[s.grade] = (gradeCounts[s.grade] || 0) + 1;
-        const date = s.created_at?.split('T')[0];
-        if (date) recentAdmissions[date] = (recentAdmissions[date] || 0) + 1;
-      });
+    const channel = supabase
+      .channel('public:students')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        () => {
+          // Debounce updates: Wait 1 second after the last change before refreshing
+          // This prevents flickering when multiple users are adding data simultaneously
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            fetchStudents();
+            fetchStats();
+          }, 1000);
+        }
+      )
+      .subscribe();
 
-      setStats({
-        totalStudents,
-        gradeDistribution: Object.entries(gradeCounts).map(([grade, count]) => ({ grade, count })),
-        recentAdmissions: Object.entries(recentAdmissions).map(([date, count]) => ({ date, count }))
-      });
-    } catch (err: any) {
-      console.error('Failed to fetch stats:', err);
-      if (err.message === 'Failed to fetch') {
-        showToast(t.networkError, 'error');
-      } else if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
-        // Handle invalid token or deleted user by logging out
-        await supabase.auth.signOut();
-        setSession(null);
-      } else {
-        showToast(`${t.loadStatsError}: ${err.message || 'Unknown error'}`, 'error');
-      }
+    return () => {
+      supabase.removeChannel(channel);
+      clearTimeout(timeoutId);
+    };
+  }, [session, fetchStudents, fetchStats]);
+
+  // Debounce search and fetch on filter changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(0); // Reset to first page on filter change
+      fetchStudents();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm, selectedGrade, selectedGender, sortBy]);
+
+  // Fetch when page changes
+  useEffect(() => {
+    fetchStudents();
+  }, [page]);
+
+  // Fetch stats separately on mount or when data changes significantly (optional, can be optimized)
+  useEffect(() => {
+    if (session) {
+      fetchStats();
     }
-  };
+  }, [session]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -535,9 +644,16 @@ export default function App() {
           setStudents(students.map(s => s.id === editingId ? data : s));
           showToast(t.updateSuccess, 'success');
         } else {
-          setStudents([data, ...students]);
+          // If on first page, prepend the new student, otherwise just refresh or do nothing
+          if (page === 0) {
+            setStudents([data, ...students].slice(0, PAGE_SIZE));
+          }
+          setTotalCount(prev => prev + 1);
           showToast(t.saveSuccess, 'success');
         }
+        
+        // Refresh stats
+        fetchStats();
         
         setIsModalOpen(false);
         setFormStep(1);
@@ -558,7 +674,6 @@ export default function App() {
           guardian_phone: '',
           notes: ''
         });
-        fetchStats();
       }
     } catch (err: any) {
       if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
@@ -614,8 +729,9 @@ export default function App() {
         if (error) throw error;
 
         setStudents([]);
-        setStats(null);
+        setTotalCount(0);
         showToast(t.clearSuccess, 'success');
+        fetchStats();
       } else if (studentToDelete) {
         const { error } = await supabase
           .from('students')
@@ -625,9 +741,10 @@ export default function App() {
         if (error) throw error;
         
         setStudents(students.filter(s => s.id !== studentToDelete));
+        setTotalCount(prev => prev - 1);
         showToast(t.deleteSuccess, 'success');
+        fetchStats();
       }
-      fetchStats();
     } catch (err: any) {
       console.error('Error deleting:', err);
       if (err.message && (err.message.includes('Refresh Token') || err.message.includes('JWT') || err.message.includes('User not found'))) {
@@ -643,40 +760,7 @@ export default function App() {
     }
   };
 
-  const filteredStudents = useMemo(() => {
-    let result = students.filter(s => 
-      (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (s.enrollment_no || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    if (selectedGrade !== 'All Grades') {
-      result = result.filter(s => s.grade === selectedGrade);
-    }
-
-    if (sortBy === 'name') {
-      result.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    } else if (sortBy === 'oldest') {
-      result.sort((a, b) => {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return dateA - dateB;
-      });
-    } else {
-      result.sort((a, b) => {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return dateB - dateA;
-      });
-    }
-
-    return result;
-  }, [students, searchTerm, selectedGrade, sortBy]);
-
-  const recentAdmissions = useMemo(() => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    return students.filter(s => s.created_at && new Date(s.created_at) > sevenDaysAgo).length;
-  }, [students]);
+  const filteredStudents = students; // Pass through, as filtering is now server-side
 
   if (!session) {
     return <Auth onAuthSuccess={() => {}} lang={lang} setLang={setLang} darkMode={darkMode} setDarkMode={setDarkMode} />;
@@ -841,7 +925,7 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setLoading(true);
-                      fetchStudents().then(() => fetchStats());
+                      fetchStudents();
                     }}
                     className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-medium shadow-sm active:scale-95"
                     title="Refresh List"
@@ -849,13 +933,15 @@ export default function App() {
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     <span className="hidden sm:inline">Refresh</span>
                   </button>
-                  <button 
-                    onClick={exportToCSV}
-                    className="flex items-center gap-2 px-4 py-2 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-medium shadow-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    {t.exportCSV}
-                  </button>
+                  {isAdmin && (
+                    <button 
+                      onClick={exportToCSV}
+                      className="flex items-center gap-2 px-4 py-2 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-medium shadow-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      {t.exportCSV}
+                    </button>
+                  )}
                   <button 
                     onClick={() => setIsModalOpen(true)}
                     className="group relative flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-semibold transition-all hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200 active:scale-95 overflow-hidden"
@@ -871,13 +957,13 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <StatsCard 
                   title={t.totalStudents} 
-                  value={students.length} 
+                  value={stats.totalStudents} 
                   icon={Users} 
                   color="bg-indigo-600" 
                 />
                 <StatsCard 
                   title={t.recentAdmissions} 
-                  value={recentAdmissions} 
+                  value={recentAdmissionsCount} 
                   icon={UserPlus} 
                   color="bg-emerald-500" 
                 />
@@ -919,8 +1005,8 @@ export default function App() {
                       value={selectedGrade}
                       onChange={(e) => setSelectedGrade(e.target.value)}
                     >
-                      <option className="dark:bg-slate-800">{t.allGrades}</option>
-                      <option value="KG" className="dark:bg-slate-800">KG</option>
+                      <option value="All Grades" className="dark:bg-slate-800">{t.allGrades}</option>
+                      <option value="KG" className="dark:bg-slate-800">{t.kg}</option>
                       {[...Array(12)].map((_, i) => (
                         <option key={i} value={`Grade ${i + 1}`} className="dark:bg-slate-800">
                           {lang === 'mm' 
@@ -928,6 +1014,20 @@ export default function App() {
                             : `Grade ${i + 1}`}
                         </option>
                       ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-3 py-1.5 shadow-sm">
+                    <Filter className="w-4 h-4 text-slate-400" />
+                    <select 
+                      className="bg-transparent text-sm font-medium text-slate-600 dark:text-slate-300 focus:outline-none cursor-pointer pr-2"
+                      value={selectedGender}
+                      onChange={(e) => setSelectedGender(e.target.value)}
+                    >
+                      <option value="All Genders" className="dark:bg-slate-800">{t.allGenders}</option>
+                      <option value="Male" className="dark:bg-slate-800">{t.male}</option>
+                      <option value="Female" className="dark:bg-slate-800">{t.female}</option>
+                      <option value="Other" className="dark:bg-slate-800">{t.other}</option>
                     </select>
                   </div>
 
@@ -947,15 +1047,16 @@ export default function App() {
                   <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-2xl whitespace-nowrap">
                     <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">{t.results}</span>
                     <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
-                      {filteredStudents.length} <span className="font-normal opacity-60">{t.of}</span> {students.length}
+                      {Math.min((page + 1) * PAGE_SIZE, totalCount)} <span className="font-normal opacity-60">{t.of}</span> {totalCount}
                     </span>
                   </div>
 
-                  {(searchTerm || selectedGrade !== 'All Grades' || sortBy !== 'newest') && (
+                  {(searchTerm || selectedGrade !== 'All Grades' || selectedGender !== 'All Genders' || sortBy !== 'newest') && (
                     <button 
                       onClick={() => {
                         setSearchTerm('');
                         setSelectedGrade('All Grades');
+                        setSelectedGender('All Genders');
                         setSortBy('newest');
                       }}
                       className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest px-2"
@@ -983,6 +1084,7 @@ export default function App() {
                           onClick={() => {
                             setSearchTerm('');
                             setSelectedGrade('All Grades');
+                            setSelectedGender('All Genders');
                             setSortBy('newest');
                           }}
                           className="mt-2 text-sm text-indigo-600 dark:text-indigo-400 font-bold"
@@ -1029,12 +1131,14 @@ export default function App() {
                           >
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button 
-                            onClick={() => handleDelete(student.id)}
-                            className="flex items-center justify-center w-9 h-9 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-lg border border-rose-100 dark:border-rose-800/30"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleDelete(student.id)}
+                              className="flex items-center justify-center w-9 h-9 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-lg border border-rose-100 dark:border-rose-800/30"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))
@@ -1122,13 +1226,15 @@ export default function App() {
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              <button 
-                                onClick={() => handleDelete(student.id)}
-                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 rounded-lg transition-all"
-                                title={t.delete}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {isAdmin && (
+                                <button 
+                                  onClick={() => handleDelete(student.id)}
+                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 rounded-lg transition-all"
+                                  title={t.delete}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1136,6 +1242,29 @@ export default function App() {
                     )}
                   </tbody>
                 </table>
+              </div>
+              
+              {/* Pagination Controls */}
+              <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Previous
+                </button>
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  Page {page + 1} of {Math.ceil(totalCount / PAGE_SIZE) || 1}
+                </span>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={(page + 1) * PAGE_SIZE >= totalCount}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
               </div>
             </motion.div>
@@ -1284,37 +1413,47 @@ export default function App() {
                 <div className="glass-card p-6">
                   <h3 className="font-bold text-slate-900 dark:text-white mb-4">{t.databaseManagement}</h3>
                   <div className="space-y-4">
-                    <button 
-                      onClick={exportToCSV}
-                      className="w-full text-left px-4 py-3 bg-emerald-50 dark:bg-emerald-900/10 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded-xl transition-colors flex items-center justify-between group"
-                    >
-                      <div>
-                        <p className="font-medium text-emerald-700 dark:text-emerald-400">{t.exportCSV}</p>
-                        <p className="text-sm text-emerald-600/70 dark:text-emerald-400/70">Export all records to CSV (Excel compatible with Burmese support)</p>
-                      </div>
-                      <Download className="w-4 h-4 text-emerald-500 group-hover:text-emerald-600 group-hover:translate-y-1 transition-all" />
-                    </button>
+                    {isAdmin ? (
+                      <>
+                        <button 
+                          onClick={exportToCSV}
+                          className="w-full text-left px-4 py-3 bg-emerald-50 dark:bg-emerald-900/10 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded-xl transition-colors flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="font-medium text-emerald-700 dark:text-emerald-400">{t.exportCSV}</p>
+                            <p className="text-sm text-emerald-600/70 dark:text-emerald-400/70">Export all records to CSV (Excel compatible with Burmese support)</p>
+                          </div>
+                          <Download className="w-4 h-4 text-emerald-500 group-hover:text-emerald-600 group-hover:translate-y-1 transition-all" />
+                        </button>
 
-                    <button 
-                      onClick={handleBackupDatabase}
-                      className="w-full text-left px-4 py-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center justify-between group"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-700 dark:text-slate-300">{t.backupDatabase}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{t.backupDatabaseDesc}</p>
+                        <button 
+                          onClick={handleBackupDatabase}
+                          className="w-full text-left px-4 py-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="font-medium text-slate-700 dark:text-slate-300">{t.backupDatabase}</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">{t.backupDatabaseDesc}</p>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-400 dark:text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
+                        </button>
+                        <button 
+                          onClick={handleClearAllRecords}
+                          className="w-full text-left px-4 py-3 bg-rose-50 dark:bg-rose-900/10 hover:bg-rose-100 dark:hover:bg-rose-900/20 rounded-xl transition-colors flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="font-medium text-rose-700 dark:text-rose-400">{t.clearAllRecords}</p>
+                            <p className="text-sm text-rose-500 dark:text-rose-400/70">{t.clearAllRecordsDesc}</p>
+                          </div>
+                          <AlertCircle className="w-4 h-4 text-rose-400" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
+                        <Lock className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Restricted Access</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Only administrators can manage database records.</p>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-slate-400 dark:text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
-                    </button>
-                    <button 
-                      onClick={handleClearAllRecords}
-                      className="w-full text-left px-4 py-3 bg-rose-50 dark:bg-rose-900/10 hover:bg-rose-100 dark:hover:bg-rose-900/20 rounded-xl transition-colors flex items-center justify-between group"
-                    >
-                      <div>
-                        <p className="font-medium text-rose-700 dark:text-rose-400">{t.clearAllRecords}</p>
-                        <p className="text-sm text-rose-500 dark:text-rose-400/70">{t.clearAllRecordsDesc}</p>
-                      </div>
-                      <AlertCircle className="w-4 h-4 text-rose-400" />
-                    </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1434,7 +1573,7 @@ export default function App() {
                                     onChange={e => setFormData({...formData, grade: e.target.value})}
                                   >
                                     <option value="">{t.select}</option>
-                                    <option value="KG">KG</option>
+                                    <option value="KG">{t.kg}</option>
                                     {[...Array(12)].map((_, i) => (
                                       <option key={i} value={`Grade ${i + 1}`}>
                                         {lang === 'mm' 
