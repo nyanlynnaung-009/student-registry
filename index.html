@@ -17,8 +17,10 @@
       // Suppress Vite HMR connection errors in preview environment
       const originalConsoleError = console.error;
       console.error = function(...args) {
-        if (args[0] && typeof args[0] === 'string' && args[0].includes('[vite] failed to connect')) {
-          return;
+        if (args[0] && typeof args[0] === 'string') {
+          if (args[0].includes('[vite] failed to connect') || args[0].includes('[vite] server connection lost')) {
+            return;
+          }
         }
         originalConsoleError.apply(console, args);
       };

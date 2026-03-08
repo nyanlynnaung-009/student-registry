@@ -866,10 +866,8 @@ export default function App() {
             <SettingsIcon className="w-5 h-5" />
             {t.settings}
           </button>
-        </nav>
 
-        <div className="p-4 border-t border-slate-100 dark:border-slate-700">
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 px-4 mt-4">
             <button 
               onClick={() => setLang('en')}
               className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -891,23 +889,7 @@ export default function App() {
               {t.burmese}
             </button>
           </div>
-          <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-2xl mb-4 transition-colors">
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{t.signedInAs}</p>
-            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-2">{session?.user.email}</p>
-            {isAdmin && (
-              <span className="inline-block px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-md border border-amber-200 dark:border-amber-800">
-                {t.adminAccess}
-              </span>
-            )}
-          </div>
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all font-medium"
-          >
-            <LogOut className="w-5 h-5" />
-            {t.logout}
-          </button>
-        </div>
+        </nav>
       </aside>
 
       {/* Main Content Area */}
@@ -1455,6 +1437,31 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                <div className="glass-card p-6">
+                  <h3 className="font-bold text-slate-900 dark:text-white mb-4">{t.account}</h3>
+                  
+                  <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 mb-4">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{t.signedInAs}</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate mb-2">{session?.user.email}</p>
+                    {isAdmin && (
+                      <span className="inline-block px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-md border border-amber-200 dark:border-amber-800">
+                        {t.adminAccess}
+                      </span>
+                    )}
+                  </div>
+
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-3 bg-rose-50 dark:bg-rose-900/10 hover:bg-rose-100 dark:hover:bg-rose-900/20 rounded-xl transition-colors flex items-center justify-between group"
+                  >
+                    <div>
+                      <p className="font-medium text-rose-700 dark:text-rose-400">{t.logout}</p>
+                      <p className="text-sm text-rose-500 dark:text-rose-400/70">{t.logoutDesc}</p>
+                    </div>
+                    <LogOut className="w-4 h-4 text-rose-400 group-hover:translate-x-1 transition-transform" />
+                  </button>
                 </div>
               </div>
             </motion.div>
