@@ -372,9 +372,11 @@ export default function App() {
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (error) {
         console.error('Session error:', error);
-        // Clear invalid session data
-        await supabase.auth.signOut();
-        setSession(null);
+        // Clear invalid session data if refresh token is invalid
+        if (error.message.includes('Refresh Token') || error.message.includes('JWT')) {
+          await supabase.auth.signOut();
+          setSession(null);
+        }
         setLoading(false);
         return;
       }
@@ -395,6 +397,13 @@ export default function App() {
         setStudents([]);
         setLoading(false);
         return;
+      }
+      
+      // Handle token refresh errors that might come through auth state change
+      if (event === 'TOKEN_REFRESH_UPDATED' && !session) {
+         await supabase.auth.signOut();
+         setSession(null);
+         return;
       }
 
       setSession(session);
@@ -721,17 +730,30 @@ export default function App() {
   const confirmDelete = async () => {
     try {
       if (isDeletingAll) {
-        const { error } = await supabase
-          .from('students')
-          .delete()
-          .gt('id', 0); 
+        let error;
+        
+        if (isAdmin) {
+          // Admin can delete ALL records
+          const result = await supabase
+            .from('students')
+            .delete()
+            .gt('id', 0); // Delete all rows
+          error = result.error;
+        } else {
+          // Regular users can only delete their own records
+          const result = await supabase
+            .from('students')
+            .delete()
+            .eq('user_id', session?.user.id);
+          error = result.error;
+        }
 
         if (error) throw error;
 
-        setStudents([]);
-        setTotalCount(0);
+        // Refresh the list
+        await fetchStudents();
+        await fetchStats();
         showToast(t.clearSuccess, 'success');
-        fetchStats();
       } else if (studentToDelete) {
         const { error } = await supabase
           .from('students')
