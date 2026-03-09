@@ -15,7 +15,7 @@ export default defineConfig(({mode}) => {
         devOptions: {
           enabled: false
         },
-        includeAssets: ['icon.svg'],
+        includeAssets: ['icon.svg', 'apple-touch-icon.png'],
         manifest: {
           name: 'Student Registry',
           short_name: 'StudentReg',
@@ -25,15 +25,15 @@ export default defineConfig(({mode}) => {
           display: 'standalone',
           icons: [
             {
-              src: 'icon.svg',
+              src: 'icon-192x192.png',
               sizes: '192x192',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any maskable'
             },
             {
-              src: 'icon.svg',
+              src: 'icon-512x512.png',
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any maskable'
             }
           ]
